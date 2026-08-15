@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mentor SerAlcalde® — V1 sin API</title>
+<title>Mentor SerAlcalde® — V2 privada y sin API</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Georgia&display=swap" rel="stylesheet">
 <style>
@@ -405,6 +405,24 @@
   .readiness.green .readiness-dot{background:#2F7D5D}.readiness.yellow .readiness-dot{background:#C9A227}.readiness.red .readiness-dot{background:#B23A48}
   .readiness strong{font-family:var(--display);font-size:13px;color:var(--navy);display:block;}
   .readiness span{font-family:var(--serif);font-size:13.5px;color:var(--ink-soft);}
+
+  /* ---- Privacidad y copias de seguridad ---- */
+  .privacy-card{
+    background:#fff;border:1px solid var(--line);border-left:3px solid var(--success);
+    border-radius:4px;padding:22px 24px;margin:28px 0;font-family:var(--serif);
+  }
+  .privacy-card h4{font-family:var(--display);font-size:15px;color:var(--navy);margin:0 0 8px;}
+  .privacy-card p{font-size:14.5px;line-height:1.65;color:var(--ink-soft);margin:5px 0;}
+  .privacy-card strong{color:var(--navy);}
+  .backup-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+  .backup-btn{
+    padding:9px 12px;background:var(--paper);border:1px solid var(--navy);border-radius:3px;
+    color:var(--navy);font-family:var(--mono);font-size:10.5px;cursor:pointer;
+  }
+  .backup-btn:hover{background:var(--navy);color:#fff;}
+  .sb-privacy{font-family:var(--mono);font-size:9.5px;color:#70809D;line-height:1.55;margin:12px 2px 0;}
+  .sb-privacy strong{color:var(--gold-soft);font-weight:500;}
+
   @media print{
     #gate,.sidebar,.topbar,.nav-pagers,#mentorDrawer,#mentorScrim,.mentor-toggle{display:none !important;}
     .shell{display:block;}
@@ -455,7 +473,11 @@
         <div class="sb-license">Acceso: <b id="licenseLabel">Demo</b></div>
         <button class="mentor-toggle" onclick="goTo('ficha')" style="margin-bottom:10px;">✎ Mi ficha de situación</button>
         <button class="mentor-toggle" onclick="goTo('book')" style="margin-bottom:10px;">📘 Mi Libro Estratégico</button>
-        <button class="mentor-toggle" onclick="openMentor()">✦ Consultar al Mentor SerAlcalde</button>
+        <button class="mentor-toggle" onclick="openMentor()" style="margin-bottom:10px;">✦ Consultar al Mentor SerAlcalde</button>
+        <button class="mentor-toggle" onclick="exportBackup()" style="margin-bottom:10px;">↓ Guardar copia de seguridad</button>
+        <button class="mentor-toggle" onclick="document.getElementById('backupFileInput').click()">↑ Recuperar mi trabajo</button>
+        <input id="backupFileInput" type="file" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
+        <div class="sb-privacy"><strong>🔒 Tu candidatura es tuya. También tus datos.</strong><br>Se guardan solo en este navegador. Haz una copia periódicamente.</div>
       </div>
     </aside>
 
@@ -1700,6 +1722,62 @@ function loadState(){
 function saveState(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(STATE)); }catch(e){}
 }
+
+/* ============================================================
+   PRIVACIDAD / COPIAS DE SEGURIDAD
+   Todo el trabajo se guarda en localStorage del navegador.
+   Estas funciones permiten trasladarlo manualmente a otro dispositivo.
+   ============================================================ */
+function isSerAlcaldeStorageKey(key){
+  return key===STORE_KEY || key.startsWith('ans_') || key.startsWith('chk_') || key.startsWith('pdf_') || key.startsWith('img_');
+}
+function exportBackup(){
+  try{
+    saveState();
+    const data={
+      app:'Mentor SerAlcalde',
+      format:'seralcalde-backup-v1',
+      exportedAt:new Date().toISOString(),
+      storage:{}
+    };
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);
+      if(key && isSerAlcaldeStorageKey(key)) data.storage[key]=localStorage.getItem(key);
+    }
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const d=new Date();
+    const stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    a.href=url; a.download=`mentor-seralcalde-copia-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    alert('Copia de seguridad guardada. Consérvala en un lugar seguro.');
+  }catch(e){
+    alert('No se pudo crear la copia de seguridad. Inténtalo de nuevo.');
+  }
+}
+async function importBackup(input){
+  const file=input.files && input.files[0];
+  if(!file) return;
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    if(!data || data.format!=='seralcalde-backup-v1' || !data.storage || typeof data.storage!=='object') throw new Error('invalid');
+    const keys=Object.keys(data.storage).filter(isSerAlcaldeStorageKey);
+    if(!keys.length) throw new Error('empty');
+    const ok=confirm('Esta copia sustituirá el trabajo de Mentor SerAlcalde guardado actualmente en este navegador. ¿Quieres continuar?');
+    if(!ok){ input.value=''; return; }
+    const toRemove=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && isSerAlcaldeStorageKey(k)) toRemove.push(k); }
+    toRemove.forEach(k=>localStorage.removeItem(k));
+    keys.forEach(k=>localStorage.setItem(k,String(data.storage[k])));
+    alert('Tu trabajo se ha recuperado correctamente. La aplicación se recargará ahora.');
+    location.reload();
+  }catch(e){
+    alert('Este archivo no parece una copia válida de Mentor SerAlcalde.');
+    input.value='';
+  }
+}
 function getAnswer(sid, exId){
   const raw = localStorage.getItem('ans_'+sid+'_'+exId);
   return raw || '';
@@ -2037,6 +2115,13 @@ function renderFicha(){
         <h1 class="session-title" style="font-size:26px;">Tu ficha de situación</h1>
         <p class="ficha-lede">No vas a leer un manual. Vas a construir tu propia candidatura, sesión a sesión. Para que el Mentor SerAlcalde pueda orientarte con criterios realmente útiles —y no con recomendaciones genéricas— necesito conocer tu punto de partida real.</p>
 
+        <div class="privacy-card">
+          <h4>🔒 Tu trabajo es privado</h4>
+          <p>Todo lo que escribas en Mentor SerAlcalde® se guarda <strong>únicamente en este navegador y en este dispositivo</strong>. SerAlcalde no recibe ni almacena tus respuestas, documentos ni tu Libro Estratégico.</p>
+          <p><strong>Importante:</strong> si cambias de dispositivo o navegador, tus datos no se trasladarán automáticamente. Te recomendamos guardar periódicamente una copia de seguridad.</p>
+          <div class="backup-actions"><button class="backup-btn" type="button" onclick="exportBackup()">↓ Guardar copia de seguridad</button><button class="backup-btn" type="button" onclick="document.getElementById('backupFileInput').click()">↑ Recuperar mi trabajo</button></div>
+        </div>
+
         <div class="field">
           <label class="field-label">Tu nombre</label>
           <input type="text" id="f-nombre" value="${escapeAttr(p.nombre)}" placeholder="Cómo quieres que te llame el Mentor SerAlcalde">
@@ -2228,6 +2313,12 @@ function renderWelcome(){
         <div class="dash-card"><div class="lbl">Tu Libro Estratégico</div><div class="dash-big">${pieces}/28</div><p>piezas ya incorporadas a tu documento de candidatura.</p></div>
         <div class="dash-card"><div class="lbl">Tu prioridad actual</div><h3>Sesión ${ns.num} · ${ns.title}</h3><p>${ns.subtitle}</p></div>
         <div class="dash-card"><div class="lbl">Mentor SerAlcalde recomienda</div><h3>No improvises el siguiente paso</h3><p>${dashboardRecommendation(nextSid)}</p></div>
+      </div>
+      <div class="privacy-card">
+        <h4>🔒 Tu candidatura es tuya. También tus datos.</h4>
+        <p>Tu ficha, tus respuestas, tus documentos de trabajo y tu Libro Estratégico se guardan solo en este navegador. <strong>SerAlcalde no los recibe ni los almacena.</strong></p>
+        <p>Si vas a cambiar de ordenador, móvil o navegador, guarda antes una copia y recupérala después en el nuevo dispositivo.</p>
+        <div class="backup-actions"><button class="backup-btn" onclick="exportBackup()">↓ Guardar copia de seguridad</button><button class="backup-btn" onclick="document.getElementById('backupFileInput').click()">↑ Recuperar mi trabajo</button></div>
       </div>
       <div class="mentor-inline">
         <div class="mentor-inline-head"><div class="mentor-badge">SA</div><div><h4>Acompañamiento estratégico sin IA generativa</h4><p style="font-family:var(--mono);font-size:10px;margin:2px 0 0;color:var(--slate);">Funciona en tu navegador · 0 € de consumo por consulta</p></div></div>
